@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili直播间挂机助手
 // @namespace    SeaLoong
-// @version      2.3.10
+// @version      2.3.12
 // @description  Bilibili直播间自动签到，领瓜子，参加抽奖，完成任务，送礼等
 // @author       SeaLoong
 // @homepageURL  https://github.com/SeaLoong/Bilibili-LRHH
@@ -12,7 +12,7 @@
 // @include      /https?:\/\/live\.bilibili\.com\/blanc\d+\??.*/
 // @include      /https?:\/\/api\.live\.bilibili\.com\/_.*/
 // @require      https://code.jquery.com/jquery-3.3.1.min.js
-// @require      https://js-1258131272.file.myqcloud.com/BilibiliAPI-1.3.4.js
+// @require      https://js-1258131272.file.myqcloud.com/BilibiliAPI-1.3.5.js
 // @require      https://js-1258131272.file.myqcloud.com/OCRAD.min.js
 // @grant        none
 // @run-at       document-start
@@ -21,7 +21,7 @@
 
 /*
 [greasyfork源]
-// @require      https://greasyfork.org/scripts/38140-bilibiliapi/code/BilibiliAPI.js?version=641218
+// @require      https://greasyfork.org/scripts/38140-bilibiliapi/code/BilibiliAPI.js?version=680959
 // @require      https://greasyfork.org/scripts/44866-ocrad/code/OCRAD.js?version=271964
 [github源]
 // @require      https://raw.githubusercontent.com/SeaLoong/Bilibili-LRHH/master/BilibiliAPI.js
@@ -30,7 +30,7 @@
 // @require      https://gitee.com/SeaLoong/Bilibili-LRHH/raw/master/BilibiliAPI.js
 // @require      https://gitee.com/SeaLoong/Bilibili-LRHH/raw/master/OCRAD.min.js
 [腾讯云源]
-// @require      https://js-1258131272.file.myqcloud.com/BilibiliAPI-1.3.4.js
+// @require      https://js-1258131272.file.myqcloud.com/BilibiliAPI-1.3.5.js
 // @require      https://js-1258131272.file.myqcloud.com/OCRAD.min.js
 */
 
@@ -38,7 +38,7 @@
     'use strict';
 
     const NAME = 'BLRHH';
-    const VERSION = '2.3.10';
+    const VERSION = '2.3.12';
     document.domain = 'bilibili.com';
 
     let API;
@@ -88,8 +88,11 @@
 
     const tryAgain = (callback) => {
         const p = $.Deferred();
-        p.then(callback);
-        setTimeout(() => p.resolve(), 10e3);
+        setTimeout(() => {
+            const t = callback();
+            if (t.then) t.then((arg1, arg2, arg3, arg4, arg5, arg6) => p.resolve(arg1, arg2, arg3, arg4, arg5, arg6));
+            else p.resolve();
+        }, 10e3);
         return p;
     };
 
@@ -1123,13 +1126,13 @@
         const Sign = {
             run: () => {
                 try {
-                    if (!CONFIG.AUTO_SIGN) return;
+                    if (!CONFIG.AUTO_SIGN) return $.Deferred().resolve();
                     if (CACHE.sign_ts && !checkNewDay(CACHE.sign_ts)) {
                         // 同一天，不再检查签到
                         runTomorrow(Sign.run);
-                        return;
+                        return $.Deferred().resolve();
                     }
-                    API.sign.doSign().then((response) => {
+                    return API.sign.doSign().then((response) => {
                         DEBUG('Sign.run: API.sign.doSign', response);
                         if (response.code === 0) {
                             // 签到成功
@@ -1150,6 +1153,7 @@
                 } catch (err) {
                     window.toast('[自动签到]运行时出现异常，已停止', 'error');
                     console.error(`[${NAME}]`, err);
+                    return $.Deferred().reject();
                 }
             }
         }; // Once Run every day
@@ -1201,21 +1205,21 @@
             MobileHeartbeat: false,
             run: () => {
                 try {
-                    if (!CONFIG.AUTO_TASK) return;
+                    if (!CONFIG.AUTO_TASK) return $.Deferred().resolve();
                     if (!Info.mobile_verify) {
                         window.toast('[自动完成任务]未绑定手机，已停止', 'caution');
-                        return;
+                        return $.Deferred().resolve();
                     }
                     if (Task.run_timer) clearTimeout(Task.run_timer);
                     if (CACHE.task_ts && !Task.MobileHeartbeat) {
                         const diff = ts_ms() - CACHE.task_ts;
                         if (diff < Task.interval) {
                             Task.run_timer = setTimeout(Task.run, diff);
-                            return;
+                            return $.Deferred().resolve();
                         }
                     }
                     if (Task.MobileHeartbeat) Task.MobileHeartbeat = false;
-                    API.i.taskInfo().then((response) => {
+                    return API.i.taskInfo().then((response) => {
                         DEBUG('Task.run: API.i.taskInfo', response);
                         for (const key in response.data) {
                             if (typeof response.data[key] === 'object') {
@@ -1232,6 +1236,7 @@
                 } catch (err) {
                     window.toast('[自动完成任务]运行时出现异常，已停止', 'error');
                     console.error(`[${NAME}]`, err);
+                    return $.Deferred().reject();
                 }
             },
             receiveAward: (task_id) => {
@@ -1294,20 +1299,20 @@
             },
             run: () => {
                 try {
-                    if (!CONFIG.AUTO_GIFT || (CONFIG.AUTO_GIFT && CONFIG.AUTO_GIFT_CONFIG.ROOMID > 0 && CONFIG.AUTO_GIFT_CONFIG.ROOMID !== Info.short_id && CONFIG.AUTO_GIFT_CONFIG.ROOMID !== Info.roomid)) return;
+                    if (!CONFIG.AUTO_GIFT || (CONFIG.AUTO_GIFT && CONFIG.AUTO_GIFT_CONFIG.ROOMID > 0 && CONFIG.AUTO_GIFT_CONFIG.ROOMID !== Info.short_id && CONFIG.AUTO_GIFT_CONFIG.ROOMID !== Info.roomid)) return $.Deferred().resolve();
                     if (Gift.run_timer) clearTimeout(Gift.run_timer);
                     if (CACHE.gift_ts) {
                         const diff = ts_ms() - CACHE.gift_ts;
                         if (diff < Gift.interval) {
                             Gift.run_timer = setTimeout(Gift.run, diff);
-                            return;
+                            return $.Deferred().resolve();
                         }
                     }
                     const func = () => {
                         window.toast('[自动送礼]送礼失败，请检查网络', 'error');
                         return tryAgain(() => Gift.run());
                     };
-                    API.room.room_init(CONFIG.AUTO_GIFT_CONFIG.ROOMID).then((response) => {
+                    return API.room.room_init(CONFIG.AUTO_GIFT_CONFIG.ROOMID).then((response) => {
                         DEBUG('Gift.run: API.room.room_init', response);
                         Gift.room_id = parseInt(response.data.room_id, 10);
                         Gift.getMedalList().then(() => {
@@ -1340,6 +1345,7 @@
                 } catch (err) {
                     window.toast('[自动送礼]运行时出现异常，已停止', 'error');
                     console.error(`[${NAME}]`, err);
+                    return $.Deferred().reject();
                 }
             },
             sendGift: (i = 0) => {
@@ -1386,19 +1392,20 @@
             run_timer: undefined,
             run: () => {
                 try {
-                    if (!CONFIG.MOBILE_HEARTBEAT) return;
+                    if (!CONFIG.MOBILE_HEARTBEAT) return $.Deferred().resolve();
                     if (MobileHeartbeat.run_timer && !Task.double_watch_task && Info.mobile_verify) {
                         Task.MobileHeartbeat = true;
                         Task.run();
                     }
                     if (MobileHeartbeat.run_timer) clearTimeout(MobileHeartbeat.run_timer);
-                    API.HeartBeat.mobile().then(() => {
+                    return API.HeartBeat.mobile().then(() => {
                         DEBUG('MobileHeartbeat.run: API.HeartBeat.mobile');
                         MobileHeartbeat.run_timer = setTimeout(MobileHeartbeat.run, 300e3);
                     }, () => tryAgain(() => MobileHeartbeat.run()));
                 } catch (err) {
                     window.toast('[移动端心跳]运行时出现异常，已停止', 'error');
                     console.error(`[${NAME}]`, err);
+                    return $.Deferred().reject();
                 }
             }
         }; // Once Run every 5mins
@@ -1520,6 +1527,7 @@
                         return;
                     }
                     TreasureBox.getCurrentTask().then((response) => {
+                        DEBUG('TreasureBox.run: TreasureBox.getCurrentTask().then', response);
                         if (response.code === 0) {
                             // 获取任务成功
                             TreasureBox.promise.timer = $.Deferred();
@@ -2230,8 +2238,7 @@
                         addCSS('#chat-popup-area-vm {display: none;}');
                     }
                     Lottery.listen(Info.uid, Info.roomid, '', false, true);
-                    Lottery.Gift.run(Info.roomid);
-                    Lottery.Guard.run(Info.roomid);
+                    Lottery.Gift.run(Info.roomid).always(() => Lottery.Guard.run(Info.roomid));
                     const areas = ['[娱乐区]', '[网游区]', '[手游区]', '[绘画区]', '[电台区]', '[单机区]'];
                     for (let i = 0; i < areas.length; ++i) {
                         API.room.getRoomList(i + 1, 0, 0, 1, CONFIG.AUTO_LOTTERY_CONFIG.GIFT_LOTTERY_CONFIG.LISTEN_NUMBER).then((response) => {
@@ -2239,8 +2246,7 @@
                             if (response.code === 0) {
                                 for (let j = 0; j < response.data.length; ++j) {
                                     Lottery.listen(Info.uid, response.data[j].roomid, areas[i], j);
-                                    Lottery.Gift.run(response.data[j].roomid);
-                                    Lottery.Guard.run(response.data[j].roomid);
+                                    Lottery.Gift.run(response.data[j].roomid).always(() => Lottery.Guard.run(response.data[j].roomid));
                                 }
                             }
                         });
